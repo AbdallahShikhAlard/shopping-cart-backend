@@ -22,6 +22,7 @@ public class Product {
     private String brand;
 
     private BigDecimal price;
+
     private int inventory; //Stock quantity
     private String description;
 

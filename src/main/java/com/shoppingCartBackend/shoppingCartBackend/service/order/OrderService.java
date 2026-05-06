@@ -12,14 +12,14 @@ import com.shoppingCartBackend.shoppingCartBackend.repository.OrderRepository;
 import com.shoppingCartBackend.shoppingCartBackend.repository.ProductRepository;
 import com.shoppingCartBackend.shoppingCartBackend.service.cart.CartService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
 import org.modelmapper.ModelMapper;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
-
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +31,7 @@ public class OrderService implements IOrderService {
     private final CartRepository cartRepository;
 
     @Override
+    @Transactional  // entire order is one atomic transaction
     public Order placeOrder(Long userId) {
         Cart cart = cartService.getCartByUserId(userId);
         Order order = createOrder(cart);
@@ -41,7 +42,6 @@ public class OrderService implements IOrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        // Clear the cart properly without deleting it
         cart.getItems().clear();
         cart.setTotalPrice(BigDecimal.ZERO);
         cartRepository.save(cart);
@@ -60,16 +60,24 @@ public class OrderService implements IOrderService {
     private List<OrderItem> createOrderItems(Order order, Cart cart) {
         return cart.getItems().stream().map(cartItem -> {
             Product product = cartItem.getProduct();
-            product.setInventory(product.getInventory() - cartItem.getQuantity()); //update inventory
-            productRepository.save(product);
+            int quantity = cartItem.getQuantity();
+
+            // Atomically decrement inventory — only succeeds if stock >= quantity
+            int updated = productRepository.decreaseInventory(product.getId(), quantity);
+
+            if (updated == 0) {
+                throw new ResourceNotFoundException(
+                        "Sorry, insufficient stock for product: " + product.getName()
+                );
+            }
+
             return new OrderItem(
-                    cartItem.getQuantity(),
+                    quantity,
                     cartItem.getUnitPrice(),
                     order,
                     product);
         }).toList();
     }
-
 
     private BigDecimal calculateTotalPrice(List<OrderItem> orderItemList) {
         return orderItemList
