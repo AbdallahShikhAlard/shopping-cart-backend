@@ -20,7 +20,6 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
 
-
 @Service
 @RequiredArgsConstructor
 public class OrderService implements IOrderService {
@@ -32,22 +31,27 @@ public class OrderService implements IOrderService {
 
     @Override
     public Order placeOrder(Long userId) {
-        Cart cart = cartService.getCartByUserId(userId);
-        Order order = createOrder(cart);
-        List<OrderItem> orderItemList = createOrderItems(order, cart);
+    Cart cart = cartService.getCartByUserId(userId);
+    Order order = createOrder(cart);
+    List<OrderItem> orderItemList = createOrderItems(order, cart);
 
-        order.setOrderItems(new HashSet<>(orderItemList));
-        order.setTotalPrice(calculateTotalPrice(orderItemList));
+    order.setOrderItems(new HashSet<>(orderItemList));
+    order.setTotalPrice(calculateTotalPrice(orderItemList));
 
-        Order savedOrder = orderRepository.save(order);
+    Order savedOrder = orderRepository.save(order);
 
-        // Clear the cart properly without deleting it
-        cart.getItems().clear();
-        cart.setTotalPrice(BigDecimal.ZERO);
-        cartRepository.save(cart);
+    // --- الإضافة هنا ---
+    // استدعاء ميثود الـ Async التي تحتوي على الـ Thread.sleep والطباعة
+ 
+    // ------------------
 
-        return savedOrder;
-    }
+    // Clear the cart properly without deleting it
+    cart.getItems().clear();
+    cart.setTotalPrice(BigDecimal.ZERO);
+    cartRepository.save(cart);
+
+    return savedOrder;
+}
 
     private Order createOrder(Cart cart) {
         Order order = new Order();
@@ -60,7 +64,7 @@ public class OrderService implements IOrderService {
     private List<OrderItem> createOrderItems(Order order, Cart cart) {
         return cart.getItems().stream().map(cartItem -> {
             Product product = cartItem.getProduct();
-            product.setInventory(product.getInventory() - cartItem.getQuantity()); //update inventory
+            product.setInventory(product.getInventory() - cartItem.getQuantity()); // update inventory
             productRepository.save(product);
             return new OrderItem(
                     cartItem.getQuantity(),
@@ -69,7 +73,6 @@ public class OrderService implements IOrderService {
                     product);
         }).toList();
     }
-
 
     private BigDecimal calculateTotalPrice(List<OrderItem> orderItemList) {
         return orderItemList
@@ -96,4 +99,5 @@ public class OrderService implements IOrderService {
     public OrderDto convertToDto(Order order) {
         return modelMapper.map(order, OrderDto.class);
     }
+
 }

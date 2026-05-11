@@ -62,10 +62,11 @@ public class ShopConfig {
 
     @Bean
     public DaoAuthenticationProvider daoAuthenticationProvider() {
-        var authProvider = new DaoAuthenticationProvider(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder());
-        return authProvider;
-    }
+    var authProvider = new DaoAuthenticationProvider(); // مشيد فارغ
+    authProvider.setUserDetailsService(userDetailsService); // ضبط الخدمة هنا
+    authProvider.setPasswordEncoder(passwordEncoder()); // ضبط التشفير هنا
+    return authProvider;
+}
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {

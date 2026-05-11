@@ -4,6 +4,7 @@ import com.shoppingCartBackend.shoppingCartBackend.dto.OrderDto;
 import com.shoppingCartBackend.shoppingCartBackend.exeptions.ResourceNotFoundException;
 import com.shoppingCartBackend.shoppingCartBackend.model.Order;
 import com.shoppingCartBackend.shoppingCartBackend.response.ApiResponse;
+import com.shoppingCartBackend.shoppingCartBackend.service.notification.NotificationService;
 import com.shoppingCartBackend.shoppingCartBackend.service.order.IOrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,16 +18,15 @@ import java.util.List;
 @RequestMapping("${api.prefix}/orders")
 public class OrderController {
     private final IOrderService orderService;
+    private final NotificationService notificationService;
 
     @PostMapping("/order")
     public ResponseEntity<ApiResponse> createOrder(@RequestParam Long userId) {
-        try {
-            Order order = orderService.placeOrder(userId);
-            OrderDto orderDto = orderService.convertToDto(order);
-            return ResponseEntity.ok().body(new ApiResponse("Order created successfully",  orderDto));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiResponse("Error while creating order", e.getMessage()));
-        }
+        Order order = orderService.placeOrder(userId); // العملية الأساسية (قاعدة البيانات)
+
+        notificationService.sendOrderConfirmation(order.getOrderId());
+
+        return ResponseEntity.ok(new ApiResponse("Success", orderService.convertToDto(order)));
     }
 
     @GetMapping("/{orderId}/order")
@@ -35,7 +35,8 @@ public class OrderController {
             OrderDto order = orderService.getOrderById(orderId);
             return ResponseEntity.ok(new ApiResponse("Order fetched successfully", order));
         } catch (ResourceNotFoundException e) {
-           return  ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse("Error when fetching order", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiResponse("Error when fetching order", e.getMessage()));
         }
     }
 
@@ -45,10 +46,9 @@ public class OrderController {
             List<OrderDto> order = orderService.getUserOrders(userId);
             return ResponseEntity.ok(new ApiResponse("Users orders fetched successfully", order));
         } catch (ResourceNotFoundException e) {
-            return  ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ApiResponse("Error when fetching user orders", e.getMessage()));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(new ApiResponse("Error when fetching user orders", e.getMessage()));
         }
     }
-
-
 
 }
