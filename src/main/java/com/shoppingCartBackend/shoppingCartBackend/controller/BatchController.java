@@ -1,5 +1,6 @@
 package com.shoppingCartBackend.shoppingCartBackend.controller;
 
+import com.shoppingCartBackend.shoppingCartBackend.dto.BatchResultResponse;
 import com.shoppingCartBackend.shoppingCartBackend.service.order.IOrderService;
 import com.shoppingCartBackend.shoppingCartBackend.service.order.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -12,25 +13,16 @@ public class BatchController {
 
     private final OrderService orderService;
 
-    // =========================================
-    // WITHOUT CHUNKING
-    // =========================================
 
-    @GetMapping("/batch/daily-sales/before")
-    public String before() {
+    @GetMapping("/daily-sales/before")
+    public BatchResultResponse before() {
 
         return orderService.processDailySalesWithoutChunking();
     }
 
-    // =========================================
-    // WITH CHUNKING
-    // =========================================
+    @GetMapping("/daily-sales/after")
+    public BatchResultResponse after() {
 
-    @GetMapping("/batch/daily-sales/after")
-    public String after() {
-
-        orderService.processDailySalesWithChunking();
-
-        return "Daily Sales Batch Job Started WITH Chunking...";
+        return orderService.processDailySalesWithChunking();
     }
 }
