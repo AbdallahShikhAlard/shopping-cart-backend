@@ -1,5 +1,6 @@
 package com.shoppingCartBackend.shoppingCartBackend.service.order;
 
+import com.shoppingCartBackend.shoppingCartBackend.dto.BatchResultResponse;
 import com.shoppingCartBackend.shoppingCartBackend.dto.OrderDto;
 import com.shoppingCartBackend.shoppingCartBackend.enums.OrderStatus;
 import com.shoppingCartBackend.shoppingCartBackend.exeptions.ResourceNotFoundException;
@@ -106,108 +107,11 @@ public class OrderService implements IOrderService {
     // =========================================
 // BEFORE
 // =========================================
-
-    public String processOrdersWithoutChunking() {
-
-        long start = System.currentTimeMillis();
-
-        List<Order> orders = orderRepository.findAll();
-
-        for (Order order : orders) {
-
-            simulateHeavyOperation(order);
-        }
-
-        long end = System.currentTimeMillis();
-
-        return "WITHOUT CHUNKING TIME: " + (end - start) + " ms";
-    }
-
-
-// =========================================
-// AFTER
-// =========================================
-
-    @Async
-    public void processOrdersWithChunking() {
-
-        long start = System.currentTimeMillis();
-
-        List<Order> orders = orderRepository.findAll();
-
-        int chunkSize = 5;
-
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-        for (int i = 0; i < orders.size(); i += chunkSize) {
-
-            List<Order> chunk = orders.subList(
-                    i,
-                    Math.min(i + chunkSize, orders.size())
-            );
-
-            CompletableFuture<Void> future =
-                    CompletableFuture.runAsync(() -> processChunk(chunk));
-
-            futures.add(future);
-        }
-
-        CompletableFuture.allOf(
-                futures.toArray(new CompletableFuture[0])
-        ).join();
-
-        long end = System.currentTimeMillis();
-
-        System.out.println(
-                "WITH CHUNKING TIME: " + (end - start) + " ms"
-        );
-    }
-
-// =========================================
-// PROCESS CHUNK
-// =========================================
-
-    private void processChunk(List<Order> chunk) {
-
-        for (Order order : chunk) {
-
-            simulateHeavyOperation(order);
-        }
-    }
-
-
-// =========================================
-// HEAVY TASK SIMULATION
-// =========================================
-
-    private void simulateHeavyOperation(Order order) {
-
-        try {
-
-            // محاكاة عملية ثقيلة
-            Thread.sleep(200);
-
-        } catch (InterruptedException e) {
-
-            Thread.currentThread().interrupt();
-        }
-    }
-    // =========================================
-// DAILY SALES WITHOUT CHUNKING
-// =========================================
-
-    public String processDailySalesWithoutChunking() {
+    public BatchResultResponse processDailySalesWithoutChunking() {
 
         long startTime = System.currentTimeMillis();
 
-        LocalDateTime startOfDay =
-                LocalDateTime.now().toLocalDate().atStartOfDay();
-
-        LocalDateTime endOfDay =
-                LocalDateTime.now();
-
-        List<Order> todayOrders =
-                orderRepository.findAll();
+        List<Order> todayOrders = orderRepository.findAll();
 
         BigDecimal totalSales = BigDecimal.ZERO;
 
@@ -215,7 +119,7 @@ public class OrderService implements IOrderService {
 
             try {
 
-                // محاكاة عملية ثقيلة
+                // Simulate heavy database/report processing
                 Thread.sleep(200);
 
             } catch (InterruptedException e) {
@@ -223,42 +127,30 @@ public class OrderService implements IOrderService {
                 Thread.currentThread().interrupt();
             }
 
-            totalSales = totalSales.add(order.getTotalPrice());
+            totalSales =
+                    totalSales.add(order.getTotalPrice());
         }
 
         long endTime = System.currentTimeMillis();
 
-        return """
-            
-            ===== DAILY SALES WITHOUT CHUNKING =====
-            Total Orders: %d
-            Total Sales: %s
-            Execution Time: %d ms
-            ========================================
-            
-            """.formatted(
+        return new BatchResultResponse(
                 todayOrders.size(),
                 totalSales,
-                (endTime - startTime)
+                (endTime - startTime),
+                "WITHOUT_CHUNKING"
         );
     }
-    // =========================================
-// DAILY SALES WITH CHUNKING
+
+
+// =========================================
+// AFTER
 // =========================================
 
-    @Async
-    public void processDailySalesWithChunking() {
+    public BatchResultResponse processDailySalesWithChunking() {
 
         long startTime = System.currentTimeMillis();
 
-        LocalDateTime startOfDay =
-                LocalDateTime.now().toLocalDate().atStartOfDay();
-
-        LocalDateTime endOfDay =
-                LocalDateTime.now();
-
-        List<Order> todayOrders =
-                orderRepository.findAll();
+        List<Order> todayOrders = orderRepository.findAll();
 
         int chunkSize = 5;
 
@@ -269,8 +161,7 @@ public class OrderService implements IOrderService {
 
             List<Order> chunk = todayOrders.subList(
                     i,
-                    Math.min(i + chunkSize, todayOrders.size())
-            );
+                    Math.min(i + chunkSize, todayOrders.size())            );
 
             CompletableFuture<BigDecimal> future =
                     CompletableFuture.supplyAsync(
@@ -286,20 +177,19 @@ public class OrderService implements IOrderService {
 
         long endTime = System.currentTimeMillis();
 
-        System.out.println("""
-
-            ===== DAILY SALES WITH CHUNKING =====
-            Total Orders: %d
-            Total Sales: %s
-            Execution Time: %d ms
-            =====================================
-
-            """.formatted(
+        return new BatchResultResponse(
                 todayOrders.size(),
                 totalSales,
-                (endTime - startTime)
-        ));
+                (endTime - startTime),
+                "WITH_CHUNKING"
+        );
     }
+
+
+// =========================================
+// PROCESS SALES CHUNK
+// =========================================
+
     private BigDecimal processSalesChunk(List<Order> chunk) {
 
         BigDecimal chunkTotal = BigDecimal.ZERO;
@@ -308,6 +198,7 @@ public class OrderService implements IOrderService {
 
             try {
 
+                // Simulate heavy database/report processing
                 Thread.sleep(200);
 
             } catch (InterruptedException e) {
@@ -321,5 +212,4 @@ public class OrderService implements IOrderService {
 
         return chunkTotal;
     }
-
 }
