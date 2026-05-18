@@ -4,14 +4,13 @@ import com.shoppingCartBackend.shoppingCartBackend.dto.BatchResultResponse;
 import com.shoppingCartBackend.shoppingCartBackend.dto.OrderDto;
 import com.shoppingCartBackend.shoppingCartBackend.enums.OrderStatus;
 import com.shoppingCartBackend.shoppingCartBackend.exeptions.ResourceNotFoundException;
-import com.shoppingCartBackend.shoppingCartBackend.model.Cart;
-import com.shoppingCartBackend.shoppingCartBackend.model.Order;
-import com.shoppingCartBackend.shoppingCartBackend.model.OrderItem;
-import com.shoppingCartBackend.shoppingCartBackend.model.Product;
+import com.shoppingCartBackend.shoppingCartBackend.model.*;
+import com.shoppingCartBackend.shoppingCartBackend.repository.CartItemRepository;
 import com.shoppingCartBackend.shoppingCartBackend.repository.CartRepository;
 import com.shoppingCartBackend.shoppingCartBackend.repository.OrderRepository;
 import com.shoppingCartBackend.shoppingCartBackend.repository.ProductRepository;
 import com.shoppingCartBackend.shoppingCartBackend.service.cart.CartService;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -26,37 +25,115 @@ import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
+
 public class OrderService implements IOrderService {
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final CartService cartService;
     private final ModelMapper modelMapper;
     private final CartRepository cartRepository;
+    private final CartItemRepository cartItemRepository;
 
+
+    @Transactional
     @Override
     public Order placeOrder(Long userId) {
-    Cart cart = cartService.getCartByUserId(userId);
-    Order order = createOrder(cart);
-    List<OrderItem> orderItemList = createOrderItems(order, cart);
 
-    order.setOrderItems(new HashSet<>(orderItemList));
-    order.setTotalPrice(calculateTotalPrice(orderItemList));
+        // =========================================
+        // LOCK CART
+        // =========================================
+        Cart cart = cartRepository.findByUserIdForUpdate(userId);
 
-    Order savedOrder = orderRepository.save(order);
+        if (cart == null) {
+            throw new RuntimeException("Cart not found");
+        }
 
-    // --- الإضافة هنا ---
-    // استدعاء ميثود الـ Async التي تحتوي على الـ Thread.sleep والطباعة
- 
-    // ------------------
+        if (cart.getItems().isEmpty()) {
+            throw new RuntimeException("Cart is empty");
+        }
 
-    // Clear the cart properly without deleting it
-    cart.getItems().clear();
-    cart.setTotalPrice(BigDecimal.ZERO);
-    cartRepository.save(cart);
+        // =========================================
+        // CREATE ORDER
+        // =========================================
+        Order order = new Order();
 
-    return savedOrder;
-}
+        order.setUser(cart.getUser());
 
+        order.setStatus(OrderStatus.PENDING);
+
+        order.setOrderDate(LocalDateTime.now());
+
+        List<OrderItem> orderItems = new ArrayList<>();
+
+        BigDecimal totalPrice = BigDecimal.ZERO;
+
+        // =========================================
+        // PROCESS PRODUCTS
+        // =========================================
+        for (CartItem item : cart.getItems()) {
+
+            Product product = productRepository
+                    .findByIdForUpdate(
+                            item.getProduct().getId()
+                    )
+                    .orElseThrow(
+                            () -> new RuntimeException(
+                                    "Product not found"
+                            )
+                    );
+
+            // Prevent overselling
+            if (product.getInventory() < item.getQuantity()) {
+                throw new RuntimeException("Out of stock");
+            }
+
+            // Update inventory
+            product.setInventory(
+                    product.getInventory()
+                            - item.getQuantity()
+            );
+
+            productRepository.saveAndFlush(product);
+
+            // Create order item
+            OrderItem orderItem = new OrderItem(
+                    item.getQuantity(),
+                    item.getUnitPrice(),
+                    order,
+                    product
+            );
+
+            orderItems.add(orderItem);
+
+            // Calculate total price
+            totalPrice = totalPrice.add(
+                    item.getUnitPrice().multiply(
+                            BigDecimal.valueOf(
+                                    item.getQuantity()
+                            )
+                    )
+            );
+        }
+// =========================================
+// FINALIZE ORDER
+// =========================================
+        order.setOrderItems(new HashSet<>(orderItems));
+
+        order.setTotalPrice(totalPrice);
+
+        Order savedOrder = orderRepository.saveAndFlush(order);
+
+// =========================================
+// CLEAR CART
+// =========================================
+        cart.getItems().clear();
+
+        cart.setTotalPrice(BigDecimal.ZERO);
+
+        cartRepository.save(cart);
+
+        return savedOrder;
+    }
     private Order createOrder(Cart cart) {
         Order order = new Order();
         order.setUser(cart.getUser());
@@ -65,16 +142,42 @@ public class OrderService implements IOrderService {
         return order;
     }
 
-    private List<OrderItem> createOrderItems(Order order, Cart cart) {
+    private List<OrderItem> createOrderItems(
+            Order order,
+            Cart cart
+    ) {
+
         return cart.getItems().stream().map(cartItem -> {
-            Product product = cartItem.getProduct();
-            product.setInventory(product.getInventory() - cartItem.getQuantity()); // update inventory
-            productRepository.save(product);
+
+            Product product = productRepository
+                    .findByIdForUpdate(
+                            cartItem.getProduct().getId()
+                    )
+                    .orElseThrow(
+                            () -> new RuntimeException(
+                                    "Product not found"
+                            )
+                    );
+
+            if (product.getInventory() < cartItem.getQuantity()) {
+                throw new RuntimeException("Out of stock");
+            }
+
+            product.setInventory(
+                    product.getInventory()
+                            - cartItem.getQuantity()
+            );
+
+            // التعديل هنا
+            productRepository.saveAndFlush(product);
+
             return new OrderItem(
                     cartItem.getQuantity(),
                     cartItem.getUnitPrice(),
                     order,
-                    product);
+                    product
+            );
+
         }).toList();
     }
 
