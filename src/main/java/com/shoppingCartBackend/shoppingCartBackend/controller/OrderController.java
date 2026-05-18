@@ -21,12 +21,29 @@ public class OrderController {
     private final NotificationService notificationService;
 
     @PostMapping("/order")
-    public ResponseEntity<ApiResponse> createOrder(@RequestParam Long userId) {
-        Order order = orderService.placeOrder(userId); // العملية الأساسية (قاعدة البيانات)
+    public ResponseEntity<ApiResponse> createOrder(
+            @RequestParam Long userId
+    ) {
 
-        notificationService.sendOrderConfirmation(order.getOrderId());
+        try {
 
-        return ResponseEntity.ok(new ApiResponse("Success", orderService.convertToDto(order)));
+            Order order = orderService.placeOrder(userId);
+
+            return ResponseEntity.ok(
+                    new ApiResponse("Success", order)
+            );
+
+        } catch (RuntimeException e) {
+
+            return ResponseEntity
+                    .status(400)
+                    .body(
+                            new ApiResponse(
+                                    e.getMessage(),
+                                    null
+                            )
+                    );
+        }
     }
 
     @GetMapping("/{orderId}/order")
