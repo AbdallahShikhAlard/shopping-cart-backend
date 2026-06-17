@@ -1,5 +1,4 @@
-package com.shoppingCartBackend.shoppingCartBackend;
-
+package com.shoppingCartBackend.shoppingCartBackend.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;

@@ -10,6 +10,8 @@ import com.shoppingCartBackend.shoppingCartBackend.repository.CartRepository;
 import com.shoppingCartBackend.shoppingCartBackend.repository.OrderRepository;
 import com.shoppingCartBackend.shoppingCartBackend.repository.ProductRepository;
 import com.shoppingCartBackend.shoppingCartBackend.service.cart.CartService;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
@@ -38,101 +40,87 @@ public class OrderService implements IOrderService {
     @Transactional
     @Override
     public Order placeOrder(Long userId) {
+        try {
+            // ── LOCK CART ─────────────────────────────────────────────
+            Cart cart = cartRepository.findByUserIdForUpdate(userId);
 
-        // =========================================
-        // LOCK CART
-        // =========================================
-        Cart cart = cartRepository.findByUserIdForUpdate(userId);
-
-        if (cart == null) {
-            throw new RuntimeException("Cart not found");
-        }
-
-        if (cart.getItems().isEmpty()) {
-            throw new RuntimeException("Cart is empty");
-        }
-
-        // =========================================
-        // CREATE ORDER
-        // =========================================
-        Order order = new Order();
-
-        order.setUser(cart.getUser());
-
-        order.setStatus(OrderStatus.PENDING);
-
-        order.setOrderDate(LocalDateTime.now());
-
-        List<OrderItem> orderItems = new ArrayList<>();
-
-        BigDecimal totalPrice = BigDecimal.ZERO;
-
-        // =========================================
-        // PROCESS PRODUCTS
-        // =========================================
-        for (CartItem item : cart.getItems()) {
-
-            Product product = productRepository
-                    .findByIdForUpdate(
-                            item.getProduct().getId()
-                    )
-                    .orElseThrow(
-                            () -> new RuntimeException(
-                                    "Product not found"
-                            )
-                    );
-
-            // Prevent overselling
-            if (product.getInventory() < item.getQuantity()) {
-                throw new RuntimeException("Out of stock");
+            if (cart == null) {
+                throw new RuntimeException("Cart not found");
+            }
+            if (cart.getItems().isEmpty()) {
+                throw new RuntimeException("Cart is empty");
             }
 
-            // Update inventory
-            product.setInventory(
-                    product.getInventory()
-                            - item.getQuantity()
-            );
+            // ── CREATE ORDER ──────────────────────────────────────────
+            Order order = new Order();
+            order.setUser(cart.getUser());
+            order.setStatus(OrderStatus.PENDING);
+            order.setOrderDate(LocalDateTime.now());
 
-            productRepository.saveAndFlush(product);
+            List<OrderItem> orderItems = new ArrayList<>();
+            BigDecimal totalPrice = BigDecimal.ZERO;
 
-            // Create order item
-            OrderItem orderItem = new OrderItem(
-                    item.getQuantity(),
-                    item.getUnitPrice(),
-                    order,
-                    product
-            );
+            // ── PROCESS PRODUCTS ──────────────────────────────────────
+            for (CartItem item : cart.getItems()) {
 
-            orderItems.add(orderItem);
+                Product product = productRepository
+                        .findByIdForUpdate(item.getProduct().getId())
+                        .orElseThrow(() ->
+                                new RuntimeException("Product not found"));
 
-            // Calculate total price
-            totalPrice = totalPrice.add(
-                    item.getUnitPrice().multiply(
-                            BigDecimal.valueOf(
-                                    item.getQuantity()
-                            )
-                    )
-            );
+                // Prevent overselling
+                if (product.getInventory() < item.getQuantity()) {
+                    throw new RuntimeException(
+                            "Out of stock: " + product.getName()
+                    );
+                }
+
+                // Update inventory
+                product.setInventory(
+                        product.getInventory() - item.getQuantity());
+                productRepository.saveAndFlush(product);
+
+                // Create order item
+                OrderItem orderItem = new OrderItem(
+                        item.getQuantity(),
+                        item.getUnitPrice(),
+                        order,
+                        product);
+                orderItems.add(orderItem);
+
+                // Calculate total
+                totalPrice = totalPrice.add(
+                        item.getUnitPrice().multiply(
+                                BigDecimal.valueOf(item.getQuantity())));
+
+
+                if (true) {
+                    throw new RuntimeException("SIMULATED CRASH FOR ACID TEST");
+                }
+            }
+
+            // ── FINALIZE ORDER ────────────────────────────────────────
+            order.setOrderItems(new HashSet<>(orderItems));
+            order.setTotalPrice(totalPrice);
+            Order savedOrder = orderRepository.saveAndFlush(order);
+
+            // ── CLEAR CART ────────────────────────────────────────────
+            cart.getItems().clear();
+            cart.setTotalPrice(BigDecimal.ZERO);
+            cartRepository.save(cart);
+
+            return savedOrder;
+
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // Optimistic lock triggered — version mismatch
+            throw new RuntimeException(
+                    "High demand on this product. Please try again.");
+
+        } catch (PessimisticLockingFailureException e) {
+            // Pessimistic lock triggered — deadlock or timeout
+            throw new RuntimeException(
+                    "System is busy processing orders. Please try again.");
         }
-// =========================================
-// FINALIZE ORDER
-// =========================================
-        order.setOrderItems(new HashSet<>(orderItems));
-
-        order.setTotalPrice(totalPrice);
-
-        Order savedOrder = orderRepository.saveAndFlush(order);
-
-// =========================================
-// CLEAR CART
-// =========================================
-        cart.getItems().clear();
-
-        cart.setTotalPrice(BigDecimal.ZERO);
-
-        cartRepository.save(cart);
-
-        return savedOrder;
     }
     private Order createOrder(Cart cart) {
         Order order = new Order();
