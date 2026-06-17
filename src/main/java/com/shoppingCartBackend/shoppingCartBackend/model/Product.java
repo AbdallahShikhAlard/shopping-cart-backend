@@ -21,6 +21,9 @@ public class Product {
     private String name;
     private String brand;
 
+    @Version
+    private Integer version;
+
     private BigDecimal price;
     private int inventory; //Stock quantity
     private String description;

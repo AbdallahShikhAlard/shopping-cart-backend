@@ -53,18 +53,18 @@ public class ProductService implements IProductService {
     }
 
     @Override
-    @Cacheable(key = "#id")  // ما بتحتاج تكرر value بعد @CacheConfig
+    @Cacheable(key = "#id")
     public Product getProductById(Long id) {
         System.out.println(">>> Cache MISS - Fetching product " + id + " from DB");
-        return productRepository.findById(id)
+        return productRepository.findByIdWithImages(id)   // ← changed from findById
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
     }
 
     @Override
-    @Cacheable(key = "'all'")  // key ثابت للـ list الكاملة
+    @Cacheable(key = "'all'")
     public List<Product> getAllProducts() {
         System.out.println(">>> Cache MISS - Fetching ALL products from DB");
-        return productRepository.findAll();
+        return productRepository.findAllWithImages();  // ← changed from findAll()
     }
 
     @Override
